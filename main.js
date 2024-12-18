@@ -3,6 +3,10 @@ import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.159.0/
 let scene, camera, renderer, d20;
 let isRolling = false;
 let time = 0;
+let currentAnimation = null;
+let isDragging = false;
+let previousMousePosition = { x: 0, y: 0 };
+let rotationSpeed = { x: 0, y: 0 };
 
 init();
 animate();
@@ -43,6 +47,25 @@ function init() {
     container.addEventListener('touchend', (e) => {
         e.preventDefault();
         rollDice();
+    });
+
+    // Add mouse/touch event listeners for drag rotation
+    container.addEventListener('mousedown', startDrag);
+    window.addEventListener('mousemove', onDrag);
+    window.addEventListener('mouseup', endDrag);
+    
+    // Touch events
+    container.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startDrag(e.touches[0]);
+    });
+    window.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        onDrag(e.touches[0]);
+    });
+    window.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        endDrag();
     });
 }
 
@@ -239,7 +262,10 @@ function createFaceHighlight(radius, faceVertices) {
 }
 
 function rollDice() {
-    if (isRolling) return;
+    // Cancel any existing animation
+    if (currentAnimation) {
+        cancelAnimationFrame(currentAnimation);
+    }
     
     isRolling = true;
     const result = Math.floor(Math.random() * 20) + 1;
@@ -309,14 +335,14 @@ function rollDice() {
             velocityY *= 0.97;
             velocityZ *= 0.97;
             
-            requestAnimationFrame(animate);
+            currentAnimation = requestAnimationFrame(animate);
         } else {
             // Smoothly settle into final position
             const settleAnimation = () => {
                 const currentDiff = d20.quaternion.angleTo(targetQuaternion);
                 if (currentDiff > 0.001) {
                     d20.quaternion.slerp(targetQuaternion, 0.1);
-                    requestAnimationFrame(settleAnimation);
+                    currentAnimation = requestAnimationFrame(settleAnimation);
                 } else {
                     // Final alignment and highlight
                     d20.quaternion.copy(targetQuaternion);
@@ -336,6 +362,7 @@ function rollDice() {
                     };
                     
                     glowAnimation();
+                    currentAnimation = null;
                     isRolling = false;
                     document.getElementById('result').textContent = `Rolled ${result}`;
                 }
@@ -344,11 +371,20 @@ function rollDice() {
         }
     };
     
-    animate();
+    currentAnimation = requestAnimationFrame(animate);
 }
 
 function animate() {
     requestAnimationFrame(animate);
+    
+    // Add smooth rotation decay when not dragging
+    if (!isDragging && !isRolling) {
+        rotationSpeed.x *= 0.95;
+        rotationSpeed.y *= 0.95;
+        
+        d20.rotation.x += rotationSpeed.x;
+        d20.rotation.y += rotationSpeed.y;
+    }
     
     // Update time and texture
     time += 0.02; // Changed from 0.05 to 0.02 for slower animation
@@ -374,14 +410,6 @@ function updateSize() {
     const cameraDistance = 4;
     camera.position.set(cameraDistance, cameraDistance, cameraDistance);
     camera.lookAt(0, 0, 0);
-
-    // Update instruction text based on viewport width
-    const instruction = document.getElementById('instruction');
-    if (width <= 768) { // Common mobile breakpoint
-        instruction.textContent = 'Tap to roll for initiative';
-    } else {
-        instruction.textContent = 'Click to roll for initiative';
-    }
 }
 
 window.addEventListener('resize', updateSize);
@@ -522,4 +550,45 @@ function createWireframe(radius, color, opacity) {
         new THREE.WireframeGeometry(wireframeGeometry),
         wireframeMaterial
     );
+}
+
+function startDrag(event) {
+    isDragging = true;
+    previousMousePosition = {
+        x: event.clientX,
+        y: event.clientY
+    };
+}
+
+function onDrag(event) {
+    if (!isDragging || isRolling) return;
+
+    const deltaMove = {
+        x: event.clientX - previousMousePosition.x,
+        y: event.clientY - previousMousePosition.y
+    };
+
+    // Update rotation speed based on drag movement
+    rotationSpeed.x = deltaMove.y * 0.005;
+    rotationSpeed.y = deltaMove.x * 0.005;
+
+    // Apply rotation
+    d20.rotation.x += rotationSpeed.x;
+    d20.rotation.y += rotationSpeed.y;
+
+    previousMousePosition = {
+        x: event.clientX,
+        y: event.clientY
+    };
+}
+
+function endDrag() {
+    if (!isDragging) return;
+    isDragging = false;
+
+    // Only trigger roll if we have significant rotation speed
+    const totalSpeed = Math.abs(rotationSpeed.x) + Math.abs(rotationSpeed.y);
+    if (totalSpeed > 0.01) {
+        rollDice();
+    }
 } 
