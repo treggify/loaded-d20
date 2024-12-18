@@ -7,6 +7,7 @@ let currentAnimation = null;
 let isDragging = false;
 let previousMousePosition = { x: 0, y: 0 };
 let rotationSpeed = { x: 0, y: 0 };
+let lastResult = 0;
 
 init();
 animate();
@@ -29,15 +30,15 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
 
-    const frontLight = new THREE.DirectionalLight(0xffffff, 2);
-    frontLight.position.set(0, 0, 10);
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    frontLight.position.set(2, 4, 6);
     scene.add(frontLight);
 
-    const topLight = new THREE.DirectionalLight(0xffffff, 2);
-    topLight.position.set(0, 10, 0);
+    const topLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    topLight.position.set(-4, 8, -2);
     scene.add(topLight);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
 
     createD20();
@@ -96,21 +97,21 @@ function createD20() {
     const smokyTexture = createSmokyTexture();
     
     const material = new THREE.MeshPhongMaterial({
-        color: 0xffffff, // Use white as base to show texture clearly
+        color: 0xffffff,
         flatShading: false,
-        shininess: 100,
-        specular: 0xffffff,
+        shininess: 80,
+        specular: 0x999999,
         transparent: true,
         opacity: 0.9,
         refractionRatio: 0.98,
         envMap: createEnvMap(),
-        map: smokyTexture, // Add the smoky texture
+        map: smokyTexture,
     });
 
     d20 = new THREE.Mesh(geometry, material);
     
     // Create black wireframe for the whole die
-    const blackWireframe = createWireframe(radius * 1.02, 0x000000, 0.8);
+    const blackWireframe = createWireframe(radius * 0.97, 0x000000, 1);
     d20.add(blackWireframe);
     
     // Store face highlights
@@ -158,8 +159,11 @@ function createD20() {
             )
             .normalize();
 
-        // Position number at face center, slightly above surface
+        // When positioning the number, offset it slightly along the face normal
+        const offsetDistance = 0.02; // Tiny offset from the face
         numberMesh.position.copy(faceCenter);
+        // Add a small offset in the direction of the face normal
+        numberMesh.position.add(normal.multiplyScalar(offsetDistance));
         
         // Orient number to align with face
         const rotationMatrix = new THREE.Matrix4();
@@ -204,17 +208,12 @@ function createTextSprite(text) {
     context.fillStyle = 'rgba(0, 0, 0, 0)';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Text - monospace and white with outline
+    // Text - monospace and white, no stroke
     context.font = 'Bold 32px Courier New';
-    
-    // Add black outline
-    context.strokeStyle = 'black';
-    context.lineWidth = 4;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.strokeText(text, canvas.width/2, canvas.height/2);
     
-    // Fill with white
+    // Fill with white, no stroke
     context.fillStyle = 'white';
     context.fillText(text, canvas.width/2, canvas.height/2);
 
@@ -223,10 +222,9 @@ function createTextSprite(text) {
         map: texture,
         transparent: true,
         side: THREE.DoubleSide,
-        depthWrite: false // This helps with z-fighting
+        depthWrite: false
     });
     
-    // Use a smaller plane
     const geometry = new THREE.PlaneGeometry(1, 1);
     const mesh = new THREE.Mesh(geometry, material);
     
@@ -287,34 +285,51 @@ function rollDice() {
     camera.getWorldPosition(cameraPosition);
     cameraPosition.normalize();
     
+    // If same number, add a full rotation to make it more interesting
+    if (result === lastResult) {
+        const extraRotation = new THREE.Quaternion();
+        extraRotation.setFromAxisAngle(new THREE.Vector3(1, 1, 1).normalize(), Math.PI * 2);
+        targetQuaternion.multiply(extraRotation);
+    }
+    
+    // Store this result for next time
+    lastResult = result;
+    
     // Create a rotation that aligns the face normal with the camera direction
     const rotationAxis = new THREE.Vector3();
     rotationAxis.crossVectors(targetFace.normal, cameraPosition).normalize();
     const rotationAngle = Math.acos(targetFace.normal.dot(cameraPosition));
     targetQuaternion.setFromAxisAngle(rotationAxis, rotationAngle);
     
-    // Initial velocity for spinning
-    let velocityX = (Math.random() - 0.5) * 0.5;
-    let velocityY = (Math.random() - 0.5) * 0.5;
-    let velocityZ = (Math.random() - 0.5) * 0.5;
+    // More controlled initial velocities
+    const baseVelocity = 0.3;  // Reduced from 0.5
+    let velocityX = (Math.random() - 0.5) * baseVelocity;
+    let velocityY = (Math.random() - 0.5) * baseVelocity;
+    let velocityZ = (Math.random() - 0.5) * baseVelocity;
+    
+    // Normalize the velocities to ensure consistent energy
+    const totalVelocity = Math.sqrt(velocityX * velocityX + velocityY * velocityY + velocityZ * velocityZ);
+    velocityX = (velocityX / totalVelocity) * baseVelocity;
+    velocityY = (velocityY / totalVelocity) * baseVelocity;
+    velocityZ = (velocityZ / totalVelocity) * baseVelocity;
     
     // Increase initial energy for more rotations
-    const initialEnergy = 3; // Increased from 1 to 3
+    const initialEnergy = 4;  // Increased from 3 for more consistent rotations
     velocityX *= initialEnergy;
     velocityY *= initialEnergy;
     velocityZ *= initialEnergy;
     
     // Track total rotation
     let totalRotation = 0;
-    const minimumRotations = Math.PI * 4; // At least 2 full rotations
+    const minimumRotations = Math.PI * 6;  // Increased from 4 to 6 for smoother transition
     
     let progress = 0;
     const animate = () => {
-        progress += 0.008;
+        progress += 0.004;
         
         if (progress < 1) {
-            // Apply friction
-            const friction = progress < 0.3 ? 1 : Math.pow(0.95, progress * 100); // Delay friction
+            // Smoother friction curve
+            const friction = progress < 0.4 ? 1 : Math.pow(0.975, progress * 80);
             
             // Update rotation based on velocity
             const rotationThisFrame = (velocityX + velocityY + velocityZ) * friction;
@@ -324,16 +339,16 @@ function rollDice() {
             d20.rotation.y += velocityY * friction;
             d20.rotation.z += velocityZ * friction;
             
-            // Only start aligning after minimum rotations
+            // Smoother alignment transition
             if (totalRotation > minimumRotations) {
-                const alignmentStrength = Math.pow(progress, 2);
-                d20.quaternion.slerp(targetQuaternion, alignmentStrength * 0.1);
+                const alignmentStrength = Math.pow(progress, 3); // Changed from squared to cubic
+                d20.quaternion.slerp(targetQuaternion, alignmentStrength * 0.05); // Reduced from 0.1
             }
             
-            // Reduce velocity
-            velocityX *= 0.97;
-            velocityY *= 0.97;
-            velocityZ *= 0.97;
+            // Reduce velocity more slowly
+            velocityX *= 0.985;
+            velocityY *= 0.985;
+            velocityZ *= 0.985;
             
             currentAnimation = requestAnimationFrame(animate);
         } else {
@@ -538,18 +553,27 @@ function updateSmokyTexture(texture, time) {
 
 // Helper function to create wireframes
 function createWireframe(radius, color, opacity) {
-    const wireframeGeometry = new THREE.IcosahedronGeometry(radius, 0);
-    const wireframeMaterial = new THREE.LineBasicMaterial({
-        color: color,
-        linewidth: 2,
-        transparent: true,
-        opacity: opacity
+    const group = new THREE.Group();
+    
+    // Create more offset lines for thicker appearance (roughly 6px)
+    const offsets = [-0.003, -0.002, -0.001, 0, 0.001, 0.002, 0.003];
+    
+    offsets.forEach(offset => {
+        const wireframeGeometry = new THREE.IcosahedronGeometry(radius + offset, 0);
+        const wireframeMaterial = new THREE.LineBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: opacity * 0.7 // Slightly reduce individual line opacity for better blending
+        });
+        
+        const wireframe = new THREE.LineSegments(
+            new THREE.WireframeGeometry(wireframeGeometry),
+            wireframeMaterial
+        );
+        group.add(wireframe);
     });
     
-    return new THREE.LineSegments(
-        new THREE.WireframeGeometry(wireframeGeometry),
-        wireframeMaterial
-    );
+    return group;
 }
 
 function startDrag(event) {
