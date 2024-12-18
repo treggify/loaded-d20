@@ -44,29 +44,47 @@ function init() {
     createD20();
 
     const container = document.getElementById('container');
-    container.addEventListener('click', rollDice);
-    container.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        rollDice();
+    const canvas = document.getElementById('dice-canvas');
+    
+    // Move event listeners to canvas instead of container
+    canvas.addEventListener('click', (e) => {
+        // Don't trigger roll if clicking link
+        if (!e.target.closest('.link')) {
+            rollDice();
+        }
+    });
+    
+    canvas.addEventListener('touchend', (e) => {
+        // Don't trigger roll if touching link
+        if (!e.target.closest('.link')) {
+            e.preventDefault();
+            rollDice();
+        }
     });
 
-    // Add mouse/touch event listeners for drag rotation
-    container.addEventListener('mousedown', startDrag);
+    // Update drag event listeners to use canvas
+    canvas.addEventListener('mousedown', startDrag);
     window.addEventListener('mousemove', onDrag);
     window.addEventListener('mouseup', endDrag);
     
     // Touch events
-    container.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        startDrag(e.touches[0]);
+    canvas.addEventListener('touchstart', (e) => {
+        if (!e.target.closest('.link')) {
+            e.preventDefault();
+            startDrag(e.touches[0]);
+        }
     });
     window.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        onDrag(e.touches[0]);
+        if (!e.target.closest('.link')) {
+            e.preventDefault();
+            onDrag(e.touches[0]);
+        }
     });
     window.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        endDrag();
+        if (!e.target.closest('.link')) {
+            e.preventDefault();
+            endDrag();
+        }
     });
 }
 
